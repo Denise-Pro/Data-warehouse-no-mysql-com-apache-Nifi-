@@ -1,0 +1,103 @@
+#Script:
+
+orders:
+
+O script de construção: 
+create table orders(regiao varchar (255), item_type varchar(255),   sales_channel varchar(255), order_priority varchar(255),
+order_date varchar (255), id_orders int not null, ship_date varchar (255), units_sold double, unit_price double, unit_cost double,
+total_revenue double, total_cost double, total_profit double, 
+country varchar (255), times_temp timestamp default current_timestamp);
+
+trig:
+
+create table trig(msg varchar(255));
+
+
+Scripit da criação: create Table fato_pocco(
+id_regiao int not null, 
+id_item_type int not null, 
+id_sales_channel int not null, 
+id_order_priority int not null,
+order_date date,
+id_orders int not null, 
+ship_date date, 
+units_sold double, 
+unit_price double, 
+unit_cost double, 
+total_revenue double, 
+total_cost double, 
+total_profit double, 
+id_country int not null, 
+times_temp timestamp,
+constraint fk_regiao_fato foreign key(id_regiao) references dm_regiao(id),
+constraint fk_item_type_fato foreign key(id_item_type) references dm_item_type(id), 
+constraint fk_sales_channel foreign key(id_sales_channel) references dm_sales_channel(id),
+constraint fk_order_priority foreign key(id_order_priority) references dm_order_priority(id),
+constraint fk_country_fato foreign key(id_country) references dm_country(id),
+constraint fk_id_orders_fato foreign key(id_orders) references nifi001.orders(id_orders)
+);
+
+#INSERT TABELA FATO- PELO NIFI
+
+insert	into fato_pocco(id_regiao, id_item_type,id_sales_channel,id_order_priority,order_date, id_orders,ship_date,units_sold,unit_price,unit_cost,total_revenue,total_cost,total_profit,id_country, times_temp)
+select distinct r.id, a.id, v.id, p.id,o.order_date,o.id_orders ,o.ship_date,units_sold,o.unit_price,o.unit_cost,o.total_revenue,o.total_cost,o.total_profit,c.id, current_timestamp()
+from nifi001.orders o inner join dm_regiao r on o.regiao = r.regiao
+inner join dm_item_type a on o.item_type =a.item_type
+inner join dm_sales_channel v on o.sales_channel= v.sales_channel
+inner join dm_order_priority p on o.order_priority = p.order_priority
+inner join dm_country c on o.country= c.country;
+
+#INSTRUÇÃO PARA PREENCHER A ORDERS PELO NIFI
+
+{
+  "type": "record",
+  "name": "ordersRecord",
+  "fields" : [
+    {"name": "regiao", "type": ["null", "string"]},
+    {"name": "country", "type": ["null", "string"]},
+    {"name": "item_type", "type": ["null", "string"]},
+    {"name": "sales_channel", "type": ["null", "string"]},
+    {"name": "order_priority", "type": ["null", "string"]},
+    {"name": "order_date", "type": ["null", "string"]}, 
+    {"name": "id_orders",  "type": ["null", "int"]},
+    {"name": "ship_date", "type": ["null", "string"]},
+    {"name": "units_sold", "type": ["null", "int"]},
+    {"name": "unit_price", "type": ["null", "double"]},
+    {"name": "unit_cost", "type": ["null", "double"]},
+    {"name": "total_revenue", "type": ["null", "double"]},
+    {"name": "total_cost", "type": ["null", "double"]},
+    {"name": "total_profit", "type": ["null", "double"]}
+	]
+}
+
+#INSTRUÇÃO PARA ATIVAR OS TRIGERS E PREENCHER AS DIMENSÕES
+
+insert into trig(msg) values('ods populada com sucesso'); 
+
+triggers TABELAS DIMENSÕES:
+ 
+CREATE DEFINER=`root`@`localhost` TRIGGER gatilho AFTER INSERT ON `trig` FOR EACH ROW
+BEGIN
+
+	insert into dw_orders.dm_item_type (item_type) select distinct(item_type)
+from nifi001.orders where not exists(select * from dw_orders.dm_item_type where item_type = nifi001.orders.item_type);
+	
+
+	insert into dw_orders.dm_country (country) select distinct(country) 
+from nifi001.orders where not exists(select * from dw_orders.dm_country where country = nifi001.orders.country);
+	
+	insert into dw_orders.dm_order_priority (order_priority) select distinct(order_priority) from nifi001.orders
+ where not exists(select * from dw_orders.dm_order_priority where order_priority = nifi001.orders.order_priority);
+ 	
+ 	insert into dw_orders.dm_sales_channel(sales_channel)select distinct(sales_channel) from nifi001.orders
+ where not exists(select * from dw_orders.dm_sales_channel where sales_channel = nifi001.orders.sales_channel);
+ 	
+
+ 	insert into dw_orders.dm_regiao (regiao) select distinct(regiao) 
+from nifi001.orders where not exists(select * from dw_orders.dm_regiao where regiao = nifi001.orders.regiao);
+END
+
+#COVERTENDO A DATA NA FATO
+
+date_format(str_to_date(o.order_date, '%m/%d/%Y'), '%Y-%m-%d')
+date_format(str_to_date(o.ship_date, '%m/%d/%Y'), '%Y-%m-%d')
